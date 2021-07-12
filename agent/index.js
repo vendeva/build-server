@@ -20,13 +20,12 @@ fs.stat("localRepository", function (err, stat) {
 });
 
 const registerOnServer = async () => {
-    const { serverHost, serverPort } = config;
+    const { serverHost } = config;
     try {
         await instance.post("/notify-agent", {
-            host: `http://${config.serverHost}`,
+            host: `http://${serverHost}`,
             port,
         });
-        console.log(port);
         console.log("registration on the server was successful");
         helper.isRegistered = true;
     } catch (e) {
@@ -55,6 +54,10 @@ app.post("/build", async (req, res) => {
         console.log("Ошибочка", e.message);
         res.status(500).end(e.message);
     }
+});
+
+app.get("/", function (req, res) {
+    res.end("I work");
 });
 
 app.listen(port, () => {

@@ -13,9 +13,6 @@ const {
 class Helper {
     constructor() {
         this.isRegistered = false;
-        // this.buildId = null;
-        // this.success = null;
-        // this.buildLog = null;
     }
 
     buildStart = async (buildId, repoName, commitHash, buildCommand) => {
@@ -25,11 +22,35 @@ class Helper {
         await execFilePromise("git", ["checkout", commitHash], {
             cwd: useLocalPath,
         });
-        const { error, stdout, stderr } = await execPromise(`${buildCommand}`, {
+        console.log("началась сборка...");
+        await execPromise("npm ci", {
             cwd: useLocalPath,
         });
-        console.log(error, stdout, stderr);
+        console.log("установлены зависимости...");
+        const { stdout, stderr } = await execPromise(`${buildCommand}`, {
+            cwd: useLocalPath,
+        });
+        const buildLog = `${stdout} ${stderr}`;
+
+        await this.sendResultServer(buildId, true, buildLog);
     };
+
+    async sendResultServer(buildId, success, buildLog) {
+        console.log("send results on build server...");
+
+        try {
+            await instance.post("/notify-build-result", {
+                buildId,
+                success,
+                buildLog,
+            });
+
+            console.log("the data was sent successfully");
+        } catch (e) {
+            console.log(e.message);
+            //setTimeout(this.sendResultServer, 10000);
+        }
+    }
 }
 
 module.exports = { Helper };

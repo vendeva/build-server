@@ -4,7 +4,7 @@ const axios = require("axios");
 const config = require("./server-conf.json");
 const { instance, execPromise } = require("./config-server");
 const { BUSY, FREE } = require("./constants.js");
-const { startBuild, finishBuild } = require("./yandexApi");
+const { startBuildByApi, finishBuildByApi } = require("./yandexApi");
 
 class Storage {
     constructor() {
@@ -13,6 +13,7 @@ class Storage {
             buildCommand: null,
             mainBranch: null,
             period: null,
+            lastCommitHash: null,
         };
         this.builds = [];
         // Убрать данные из this.agents
@@ -24,6 +25,11 @@ class Storage {
                 start: null,
             },
         ];
+    }
+
+    getAgentByBuildId(buildId) {
+        console.log(this.agents);
+        return this.agents.find((agent) => agent.buildId === buildId);
     }
 
     registerAgent = (host, port) => {
@@ -71,17 +77,21 @@ class Storage {
 
         this.changeAgentStatus(agent, BUSY, build.id, new Date());
 
-        await startBuild(agent, params);
+        await startBuildByApi(agent, params);
     };
 
-    changeAgentStatus(agent, status, buildId, start = null) {
+    changeAgentStatus(agent, status, buildId = null, start = null) {
         agent.status = status;
         agent.buildId = buildId;
         agent.start = start;
     }
 
-    buildStart = async (buildId, repoName, commitHash, buildCommand) => {
-        console.log(buildId, repoName, commitHash, buildCommand);
+    buildFinish = async (buildId, success, buildLog) => {
+        const agent = this.getAgentByBuildId(buildId);
+        console.log(`agent has successfully completed work ${agent.url}`);
+        await finishBuildByApi(buildId, agent.start, success, buildLog);
+
+        this.changeAgentStatus(agent, FREE);
     };
 }
 
