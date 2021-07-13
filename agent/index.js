@@ -1,6 +1,5 @@
 const cors = require("cors");
 const express = require("express");
-const axios = require("axios");
 const fs = require("fs");
 const config = require("./agent-conf.json");
 const { port, instance, useLocalPath } = require("./config-agent");
@@ -19,18 +18,21 @@ fs.stat("localRepository", function (err, stat) {
     }
 });
 
-const registerOnServer = async () => {
+const registerOnServer = async (n) => {
     const { serverHost } = config;
     try {
         await instance.post("/notify-agent", {
             host: `http://${serverHost}`,
             port,
         });
-        console.log("registration on the server was successful");
+        console.log("Registration on the server was successful");
         helper.isRegistered = true;
     } catch (e) {
-        console.log(`registration on the server failed with an error ${e.message}`);
-        setTimeout(registerOnServer(), 10000);
+        console.log(`Registration on the server failed with an error ${e.message}`);
+        if (n >= 1) {
+            await new Promise((resolve) => setTimeout(resolve, 10000));
+            await registerOnServer(n - 1);
+        }
     }
 };
 
@@ -42,14 +44,16 @@ app.use(express.urlencoded({ extended: true }));
 
 app.post("/build", async (req, res) => {
     if (!helper.isRegistered) {
-        res.status(500).end("build agent is not registered");
+        res.status(500).end("Build agent is not registered");
         return;
     }
 
     const { buildId, repoName, commitHash, buildCommand } = req.body;
     try {
+        helper.work = true;
         await helper.buildStart(buildId, repoName, commitHash, buildCommand);
-        res.end("successfully launched the build");
+        helper.work = false;
+        res.end("Successfully launched the build");
     } catch (e) {
         console.log("Ошибочка", e.message);
         res.status(500).end(e.message);
@@ -57,10 +61,11 @@ app.post("/build", async (req, res) => {
 });
 
 app.get("/", function (req, res) {
-    res.end("I work");
+    const action = helper.work ? "work" : "wait";
+    res.end(`I am ${action}`);
 });
 
-app.listen(port, () => {
+app.listen(port, async () => {
     console.log(`Build agent started on port ${port}`);
-    registerOnServer();
+    await registerOnServer(60);
 });

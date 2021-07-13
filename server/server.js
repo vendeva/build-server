@@ -1,11 +1,11 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
 const axios = require("axios");
-const { port, useLocalPath, useLogsPath } = require("./config-server");
+const fs = require("fs");
+const { port, useAgentsFile, execFilePromise } = require("./config-server");
 const { Storage } = require("./storage-server");
 const { getSettings, getBuilds, startNewBuild } = require("./yandexApi");
+const { FREE, BUSY } = require("./constants.js");
 
 const storage = new Storage();
 
@@ -16,12 +16,37 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 (async () => {
+    let currentSettings = storage.settings;
     await getSettings(storage);
+    // Читаем список агентов в файле JSON
+    fs.stat(useAgentsFile, async (err, stat) => {
+        if (stat) {
+            let getDataAgents = JSON.parse(await fs.promises.readFile(useAgentsFile));
+            await execFilePromise("rm", ["-rf", useAgentsFile]);
+            // Проверка работают ли билд агенты
+            Object.values(getDataAgents).forEach(async (agent) => {
+                try {
+                    const { data } = await axios.get(`${agent.url}`);
+                    if (data === "I am wait") {
+                        agent.status = FREE;
+                        agent.buildId = null;
+                        agent.status = null;
+                    }
+                    storage.registerAgent(`${agent.url}`, agent.status, agent.buildId, agent.start);
+                    agent;
+                } catch (e) {
+                    console.log("Build agent not work " + e.message);
+                }
+            });
+        }
+    });
+
     let timerId;
     // Поиск новых коммитов в репозитории
-    const updateRepoByNewcommits = async () => {
-        console.log("check last commit in repo");
+    const updateRepoByNewCommits = async () => {
+        console.log("Check last commit in repo");
         clearTimeout(timerId);
+        await getSettings(storage);
         const { repoName, mainBranch, period } = storage.settings;
         if (repoName === null) return;
         let res;
@@ -33,33 +58,37 @@ app.use(express.urlencoded({ extended: true }));
                 },
             });
         } catch (e) {
-            console.log(`in this branch not found commits: ${e.message}`);
+            console.log(`In this branch not found commits: ${e.message}`);
             return;
         }
         const { data } = res;
-        if (data && storage.lastCommitHash !== data[0].sha) {
+        if (
+            (data && storage.lastCommitHash !== data[0].sha) ||
+            JSON.stringify(currentSettings) !== JSON.stringify(storage.settings)
+        ) {
+            currentSettings = storage.settings;
             storage.lastCommitHash = data[0].sha;
             const commitMessage = data[0].commit.message;
             const authorName = data[0].author.login;
-            console.log(storage.lastCommitHash);
-            console.log("in this branch new commit, try add build to the queue");
+            console.log("Last commit " + storage.lastCommitHash);
+            console.log("In this branch new commit, try add build to the queue");
             //Вернуть!!
-            await startNewBuild(commitMessage, storage.lastCommitHash, mainBranch, authorName);
+            //await startNewBuild(commitMessage, storage.lastCommitHash, mainBranch, authorName);
         }
 
-        timerId = setTimeout(updateRepoByNewcommits, +period * 60000);
+        timerId = setTimeout(updateRepoByNewCommits, +period * 60000);
     };
-    await updateRepoByNewcommits();
+    await updateRepoByNewCommits();
 
     // Поиск билдов в статусе Waiting
     const updateBuilds = async () => {
-        console.log("attempt to update builds");
-
+        console.log("Attempt to update builds");
+        await getSettings(storage);
         if (storage.settings.repoName === null) return;
 
         const { data } = await getBuilds();
 
-        await storage.searchWaitingBuilds(data);
+        storage.searchWaitingBuilds(data);
         //Вернуть!
         setTimeout(updateBuilds, 30000);
     };
@@ -68,9 +97,16 @@ app.use(express.urlencoded({ extended: true }));
 
 app.post("/notify-agent", async (req, res) => {
     const { host, port } = req.body;
-    console.log(host, port);
-    storage.registerAgent(host, port);
-    console.log(storage.agents);
+    const url = `${host}:${port}`;
+
+    console.log(`Agent ${url} need to register`);
+
+    const checkAgent = storage.agents.find((agent) => agent.url === `${url}`);
+    if (checkAgent) {
+        storage.changeAgentStatus(checkAgent, FREE);
+    }
+
+    storage.registerAgent(url);
 
     res.end("");
 });
@@ -78,7 +114,6 @@ app.post("/notify-agent", async (req, res) => {
 app.post("/notify-build-result", async (req, res) => {
     const { buildId, success, buildLog } = req.body;
     try {
-        console.log(buildId, success, buildLog);
         await storage.buildFinish(buildId, success, buildLog);
         res.end("");
     } catch (e) {

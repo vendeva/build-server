@@ -7,7 +7,6 @@ let { port, serverHost } = require("./agent-conf.json");
 const server = require("../server/config-server");
 
 port = process.env["PORT"] || port;
-console.log(port);
 
 module.exports = {
     port,
@@ -19,6 +18,7 @@ module.exports = {
         }),
     }),
     useLocalPath: path.resolve(__dirname, "localRepository"),
+    useAgentPath: path.resolve(__dirname, `localRepository/Agent_${port}`),
     execFilePromise: util.promisify(execFile),
     execPromise: util.promisify(exec),
 };

@@ -1,34 +1,38 @@
-const cors = require("cors");
-const express = require("express");
-const axios = require("axios");
-const config = require("./agent-conf.json");
+const path = require("path");
 const {
     instance,
     execPromise,
     execFilePromise,
     useLocalPath,
-    useLogsPath,
+    useAgentPath,
+    port,
 } = require("./config-agent");
 
 class Helper {
     constructor() {
         this.isRegistered = false;
+        this.work = false;
     }
 
     buildStart = async (buildId, repoName, commitHash, buildCommand) => {
-        console.log(buildId, repoName, commitHash, buildCommand);
-        await execFilePromise("rm", ["-rf", "localRepository/"]);
-        await execFilePromise("git", ["clone", repoName, "localRepository"]);
+        console.log("Параметры для сборки:");
+        console.log({ buildId, repoName, commitHash, buildCommand });
+        await execFilePromise("rm", ["-rf", `Agent_${port}/`], {
+            cwd: useLocalPath,
+        });
+        await execFilePromise("git", ["clone", repoName, `Agent_${port}/`], {
+            cwd: useLocalPath,
+        });
         await execFilePromise("git", ["checkout", commitHash], {
-            cwd: useLocalPath,
+            cwd: useAgentPath,
         });
-        console.log("началась сборка...");
+        console.log("Началась сборка...");
         await execPromise("npm ci", {
-            cwd: useLocalPath,
+            cwd: useAgentPath,
         });
-        console.log("установлены зависимости...");
+        console.log("Установлены зависимости...");
         const { stdout, stderr } = await execPromise(`${buildCommand}`, {
-            cwd: useLocalPath,
+            cwd: useAgentPath,
         });
         const buildLog = `${stdout} ${stderr}`;
 
@@ -36,7 +40,7 @@ class Helper {
     };
 
     async sendResultServer(buildId, success, buildLog) {
-        console.log("send results on build server...");
+        console.log("Send results on build server...");
 
         try {
             await instance.post("/notify-build-result", {
@@ -45,10 +49,9 @@ class Helper {
                 buildLog,
             });
 
-            console.log("the data was sent successfully");
+            console.log("The data was sent successfully");
         } catch (e) {
             console.log(e.message);
-            //setTimeout(this.sendResultServer, 10000);
         }
     }
 }

@@ -25,7 +25,6 @@ module.exports = {
             rejectUnauthorized: false,
         }),
     }),
-    useLocalPath: path.resolve(__dirname, "localRepository"),
-    useLogsPath: path.resolve(__dirname, "logs"),
-    execPromise: util.promisify(execFile),
+    useAgentsFile: "./agents.json",
+    execFilePromise: util.promisify(execFile),
 };
