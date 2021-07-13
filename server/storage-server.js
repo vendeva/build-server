@@ -19,7 +19,7 @@ class Storage {
         return this.agents.find((agent) => agent.buildId === buildId);
     }
 
-    registerAgent = (url, status = FREE, buildId = null, start = null) => {
+    registerAgent = (url, status, buildId = null, start = null) => {
         if (this.agents.some((agent) => agent.url === url)) return;
 
         console.log(`The new agent is working ${url}`);
@@ -84,9 +84,18 @@ class Storage {
         agent.status = status;
         agent.buildId = buildId;
         agent.start = start;
-        let data = JSON.parse(await fs.promises.readFile(useAgentsFile));
-        data[`${agent.url}`] = agent;
-        await fs.promises.writeFile(useAgentsFile, JSON.stringify(data));
+        fs.stat(useAgentsFile, async (err, stat) => {
+            if (!stat) {
+                await fs.promises.writeFile(
+                    useAgentsFile,
+                    JSON.stringify({ [`${agent.url}`]: agent })
+                );
+            } else {
+                let data = JSON.parse(await fs.promises.readFile(useAgentsFile));
+                data[`${agent.url}`] = agent;
+                await fs.promises.writeFile(useAgentsFile, JSON.stringify(data));
+            }
+        });
     };
 
     buildFinish = async (buildId, success, buildLog) => {

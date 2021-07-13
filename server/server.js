@@ -16,24 +16,22 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 (async () => {
-    let currentSettings = storage.settings;
     await getSettings(storage);
     // Читаем список агентов в файле JSON
     fs.stat(useAgentsFile, async (err, stat) => {
         if (stat) {
             let getDataAgents = JSON.parse(await fs.promises.readFile(useAgentsFile));
             await execFilePromise("rm", ["-rf", useAgentsFile]);
-            // Проверка работают ли билд агенты
+            // Проверка работают ли билд агенты, регистрируем со статусом свободен или занят
             Object.values(getDataAgents).forEach(async (agent) => {
                 try {
                     const { data } = await axios.get(`${agent.url}`);
                     if (data === "I am wait") {
                         agent.status = FREE;
                         agent.buildId = null;
-                        agent.status = null;
+                        agent.start = null;
                     }
                     storage.registerAgent(`${agent.url}`, agent.status, agent.buildId, agent.start);
-                    agent;
                 } catch (e) {
                     console.log("Build agent not work " + e.message);
                 }
@@ -47,33 +45,17 @@ app.use(express.urlencoded({ extended: true }));
         console.log("Check last commit in repo");
         clearTimeout(timerId);
         await getSettings(storage);
-        const { repoName, mainBranch, period } = storage.settings;
+        const { period, repoName, mainBranch } = storage.settings;
         if (repoName === null) return;
-        let res;
-        try {
-            res = await axios.get(`https://api.github.com/repos/vendeva/yandex_task1/commits`, {
-                params: {
-                    sha: `${mainBranch}`,
-                    access_token: "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",
-                },
-            });
-        } catch (e) {
-            console.log(`In this branch not found commits: ${e.message}`);
-            return;
-        }
-        const { data } = res;
-        if (
-            (data && storage.lastCommitHash !== data[0].sha) ||
-            JSON.stringify(currentSettings) !== JSON.stringify(storage.settings)
-        ) {
-            currentSettings = storage.settings;
+
+        const data = await takeDataFromGitApi(repoName, mainBranch);
+        if (data && storage.lastCommitHash !== data[0].sha) {
             storage.lastCommitHash = data[0].sha;
             const commitMessage = data[0].commit.message;
             const authorName = data[0].author.login;
             console.log("Last commit " + storage.lastCommitHash);
             console.log("In this branch new commit, try add build to the queue");
-            //Вернуть!!
-            //await startNewBuild(commitMessage, storage.lastCommitHash, mainBranch, authorName);
+            await startNewBuild(commitMessage, storage.lastCommitHash, mainBranch, authorName);
         }
 
         timerId = setTimeout(updateRepoByNewCommits, +period * 60000);
@@ -83,17 +65,46 @@ app.use(express.urlencoded({ extended: true }));
     // Поиск билдов в статусе Waiting
     const updateBuilds = async () => {
         console.log("Attempt to update builds");
+        let currentSettings = storage.settings;
         await getSettings(storage);
-        if (storage.settings.repoName === null) return;
+
+        // Если изменились настройки репозитория стартуем новый билд
+        const { repoName, mainBranch } = storage.settings;
+        if (repoName === null) return;
+        const gitData = await takeDataFromGitApi(repoName, mainBranch);
+        const commitMessage = gitData[0].commit.message;
+        const authorName = gitData[0].author.login;
+
+        if (JSON.stringify(currentSettings) !== JSON.stringify(storage.settings)) {
+            console.log("Settings the settings have changed, try add build to the queue");
+            currentSettings = storage.settings;
+            await startNewBuild(commitMessage, storage.lastCommitHash, mainBranch, authorName);
+        }
 
         const { data } = await getBuilds();
 
         storage.searchWaitingBuilds(data);
-        //Вернуть!
         setTimeout(updateBuilds, 30000);
     };
     await updateBuilds();
 })();
+
+const takeDataFromGitApi = async (repoName, mainBranch) => {
+    let res;
+    let repoNewName = repoName.match(/(?<=\/)\w+\/\w+(?=\.\w+$)/)[0];
+    try {
+        res = await axios.get(`https://api.github.com/repos/${repoNewName}/commits`, {
+            params: {
+                sha: `${mainBranch}`,
+                access_token: "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",
+            },
+        });
+    } catch (e) {
+        console.log(`In this branch not found commits: ${e.message}`);
+        return;
+    }
+    return res.data;
+};
 
 app.post("/notify-agent", async (req, res) => {
     const { host, port } = req.body;
@@ -106,7 +117,7 @@ app.post("/notify-agent", async (req, res) => {
         storage.changeAgentStatus(checkAgent, FREE);
     }
 
-    storage.registerAgent(url);
+    storage.registerAgent(url, FREE);
 
     res.end("");
 });
