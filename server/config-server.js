@@ -27,4 +27,5 @@ module.exports = {
     }),
     useAgentsFile: "./agents.json",
     execFilePromise: util.promisify(execFile),
+    git_token: "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",
 };

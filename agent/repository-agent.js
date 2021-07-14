@@ -15,6 +15,9 @@ class Helper {
     }
 
     buildStart = async (buildId, repoName, commitHash, buildCommand) => {
+        if (/rm -rf/.test(buildCommand)) {
+            throw new Error("Невалидная команда для сборки");
+        }
         console.log("Параметры для сборки:");
         console.log({ buildId, repoName, commitHash, buildCommand });
         await execFilePromise("rm", ["-rf", `Agent_${port}/`], {
@@ -36,10 +39,10 @@ class Helper {
         });
         const buildLog = `${stdout} ${stderr}`;
 
-        await this.sendResultServer(buildId, true, buildLog);
+        await this.sendResultServer(buildId, true, buildLog, 60);
     };
 
-    async sendResultServer(buildId, success, buildLog) {
+    async sendResultServer(buildId, success, buildLog, n) {
         console.log("Send results on build server...");
 
         try {
@@ -52,6 +55,12 @@ class Helper {
             console.log("The data was sent successfully");
         } catch (e) {
             console.log(e.message);
+            if (n >= 1) {
+                await new Promise((resolve) => setTimeout(resolve, 10000));
+                if (/ECONNREFUSED/.test(e.message)) {
+                    await this.sendResultServer(buildId, success, buildLog, n - 1);
+                }
+            }
         }
     }
 }

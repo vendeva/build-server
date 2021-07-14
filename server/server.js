@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const fs = require("fs");
-const { port, useAgentsFile, execFilePromise } = require("./config-server");
+const { port, useAgentsFile, execFilePromise, git_token } = require("./config-server");
 const { Storage } = require("./storage-server");
 const { getSettings, getBuilds, startNewBuild } = require("./yandexApi");
 const { FREE, BUSY } = require("./constants.js");
@@ -31,7 +31,12 @@ app.use(express.urlencoded({ extended: true }));
                         agent.buildId = null;
                         agent.start = null;
                     }
-                    storage.registerAgent(`${agent.url}`, agent.status, agent.buildId, agent.start);
+                    storage.registerAgent(
+                        `${agent.url}`,
+                        agent.status,
+                        agent.buildId,
+                        new Date(agent.start)
+                    );
                 } catch (e) {
                     console.log("Build agent not work " + e.message);
                 }
@@ -89,6 +94,7 @@ app.use(express.urlencoded({ extended: true }));
     await updateBuilds();
 })();
 
+// Получаем данные с гита о коммитах
 const takeDataFromGitApi = async (repoName, mainBranch) => {
     let res;
     let repoNewName = repoName.match(/(?<=\/)\w+\/\w+(?=\.\w+$)/)[0];
@@ -96,11 +102,11 @@ const takeDataFromGitApi = async (repoName, mainBranch) => {
         res = await axios.get(`https://api.github.com/repos/${repoNewName}/commits`, {
             params: {
                 sha: `${mainBranch}`,
-                access_token: "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",
+                access_token: git_token,
             },
         });
     } catch (e) {
-        console.log(`In this branch not found commits: ${e.message}`);
+        console.log(`Git answer: ${e.message}`);
         return;
     }
     return res.data;
