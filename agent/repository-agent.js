@@ -7,7 +7,6 @@ const {
     useAgentPath,
     port,
 } = require("./config-agent");
-const { exec } = require("child_process");
 
 class Helper {
     constructor() {
