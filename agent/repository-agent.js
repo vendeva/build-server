@@ -7,6 +7,7 @@ const {
     useAgentPath,
     port,
 } = require("./config-agent");
+const { exec } = require("child_process");
 
 class Helper {
     constructor() {
@@ -34,12 +35,21 @@ class Helper {
             cwd: useAgentPath,
         });
         console.log("Установлены зависимости...");
-        const { stdout, stderr } = await execPromise(`${buildCommand}`, {
-            cwd: useAgentPath,
-        });
-        const buildLog = `${stdout} ${stderr}`;
+        let success, buildLog;
+        try {
+            const { stdout, stderr } = await execPromise(`${buildCommand}`, {
+                cwd: useAgentPath,
+            });
 
-        await this.sendResultServer(buildId, true, buildLog, 60);
+            buildLog = `${stdout} ${stderr}`;
+            success = true;
+        } catch (e) {
+            const { stderr } = e;
+            buildLog = `${stderr}`;
+            success = false;
+            console.log("Error, exit code " + e.code);
+        }
+        await this.sendResultServer(buildId, success, buildLog, 60);
     };
 
     async sendResultServer(buildId, success, buildLog, n) {

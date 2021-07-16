@@ -56,6 +56,7 @@ app.post("/build", async (req, res) => {
         res.end("Successfully launched the build");
     } catch (e) {
         console.log("Ошибочка", e.message);
+        helper.work = false;
         res.status(500).end(e.message);
     }
 });
